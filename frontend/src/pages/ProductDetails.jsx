@@ -9,6 +9,7 @@ const ProductDetails = () => {
   const [product, setProduct] = useState(null);
   const [loading, setLoading] = useState(true);
   const [quantity, setQuantity] = useState(1);
+  const [selectedSize, setSelectedSize] = useState('');
   const { addItemToCart } = useCart();
 
   useEffect(() => {
@@ -18,9 +19,15 @@ const ProductDetails = () => {
   const loadProduct = async () => {
     try {
       setLoading(true);
+      setSelectedSize('');
       const response = await getProductById(id);
       if (response.data.success) {
-        setProduct(response.data.data);
+        const p = response.data.data;
+        setProduct(p);
+        if (p.sizes) {
+          const firstSize = p.sizes.split(',')[0]?.trim() || '';
+          setSelectedSize(firstSize);
+        }
       }
     } catch (error) {
       console.error('Error loading product:', error);
@@ -30,12 +37,24 @@ const ProductDetails = () => {
   };
 
   const handleAddToCart = async () => {
-    const success = await addItemToCart(product.id, quantity);
-    if (success) {
-      alert('Product added to cart!');
-    } else {
-      alert('Failed to add product to cart');
+    if (!product?.id) return;
+    if (product.sizes && !selectedSize) {
+      alert('Please select a size');
+      return;
     }
+    if ((product.stock_quantity ?? 0) === 0) return;
+    await addItemToCart(product.id, quantity, selectedSize);
+  };
+
+  const parseSizeChart = (chartStr) => {
+    if (!chartStr) return [];
+    return chartStr.split(';').map(part => {
+      const colon = part.indexOf(':');
+      if (colon === -1) return null;
+      const label = part.slice(0, colon).trim();
+      const values = part.slice(colon + 1).split(',').map(v => v.trim());
+      return { label, values };
+    }).filter(Boolean);
   };
 
   if (loading) {
@@ -66,18 +85,63 @@ const ProductDetails = () => {
         <div className="product-info-section">
           <h1>{product.name}</h1>
           <p className="product-category">{product.category_name || 'Uncategorized'}</p>
-          <p className="product-price">${product.price.toFixed(2)}</p>
+          <p className="product-price">${(product.price ?? 0).toFixed(2)}</p>
           <p className="product-description">{product.description}</p>
           <div className="product-meta">
             <p><strong>Gender:</strong> {product.gender}</p>
             <p><strong>Stock:</strong> {product.stock_quantity} available</p>
           </div>
+          {product.sizes && (
+            <div className="size-selector-section">
+              <label className="size-label">Select Size:</label>
+              <div className="size-buttons">
+                {product.sizes.split(',').map(s => {
+                  const size = s.trim();
+                  return (
+                    <button
+                      key={size}
+                      type="button"
+                      className={`size-btn ${selectedSize === size ? 'active' : ''}`}
+                      onClick={() => setSelectedSize(size)}
+                    >
+                      {size}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+          {product.size_chart && (
+            <div className="size-chart-section">
+              <details className="size-chart-details">
+                <summary>Size Chart</summary>
+                <table className="size-chart-table">
+                  <thead>
+                    <tr>
+                      <th>Size</th>
+                      {product.sizes && product.sizes.split(',').map(s => (
+                        <th key={s.trim()}>{s.trim()}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {parseSizeChart(product.size_chart).map((row, i) => (
+                      <tr key={i}>
+                        <td>{row.label}</td>
+                        {row.values.map((v, j) => <td key={j}>{v}</td>)}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </details>
+            </div>
+          )}
           <div className="product-actions">
             <div className="quantity-selector">
               <label>Quantity:</label>
               <button onClick={() => setQuantity(Math.max(1, quantity - 1))}>-</button>
               <span>{quantity}</span>
-              <button onClick={() => setQuantity(Math.min(product.stock_quantity, quantity + 1))}>+</button>
+              <button onClick={() => setQuantity(Math.min(product.stock_quantity ?? 999, quantity + 1))}>+</button>
             </div>
             <button
               className="add-to-cart-btn-large"

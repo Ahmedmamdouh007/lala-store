@@ -1,9 +1,11 @@
 import axios from 'axios';
 
-const API_BASE_URL = 'http://localhost:8001/api';
+// Use Vite proxy: requests go to /api -> proxied to backend (avoids CORS)
+const API_BASE_URL = '/api';
 
 const api = axios.create({
   baseURL: API_BASE_URL,
+  timeout: 20000,
   headers: {
     'Content-Type': 'application/json',
   },
@@ -27,5 +29,10 @@ export const updateCartItem = (data) => api.put('/cart/update', data);
 // Orders API
 export const createOrder = (data) => api.post('/orders/create', data);
 export const getUserOrders = (userId) => api.get(`/orders/user/${userId}`);
+
+// Stripe (Visa/card - PCI safe)
+export const getStripeConfig = () => api.get('/stripe-config');
+export const createPaymentIntent = (amountCents, currency = 'usd') =>
+  api.post('/create-payment-intent', { amount_cents: amountCents, currency });
 
 export default api;

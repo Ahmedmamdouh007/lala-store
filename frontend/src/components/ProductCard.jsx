@@ -7,12 +7,9 @@ const ProductCard = ({ product }) => {
 
   const handleAddToCart = async (e) => {
     e.preventDefault();
-    const success = await addItemToCart(product.id, 1);
-    if (success) {
-      alert('Product added to cart!');
-    } else {
-      alert('Failed to add product to cart');
-    }
+    e.stopPropagation();
+    if (!product?.id) return;
+    await addItemToCart(product.id, 1);
   };
 
   return (
@@ -32,7 +29,7 @@ const ProductCard = ({ product }) => {
           <h3 className="product-name">{product.name}</h3>
           <p className="product-description">{product.description}</p>
           <div className="product-footer">
-            <span className="product-price">${product.price.toFixed(2)}</span>
+            <span className="product-price">${(product.price ?? 0).toFixed(2)}</span>
             <button
               className="add-to-cart-btn"
               onClick={handleAddToCart}

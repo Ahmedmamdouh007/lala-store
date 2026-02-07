@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { getProductsByGender } from '../api/api';
+import { getProductsByGender, getAllProducts } from '../api/api';
 import ProductCard from '../components/ProductCard';
 import './Women.css';
 
@@ -14,9 +14,18 @@ const Women = () => {
   const loadProducts = async () => {
     try {
       setLoading(true);
-      const response = await getProductsByGender('women');
-      if (response.data.success) {
-        setProducts(response.data.data);
+      let data;
+      try {
+        const response = await getProductsByGender('women');
+        data = response?.data;
+      } catch {
+        const fallback = await getAllProducts().catch(() => null);
+        if (fallback?.data?.success && Array.isArray(fallback?.data?.data)) {
+          data = { success: true, data: fallback.data.data.filter((p) => (p.gender || '').toLowerCase() === 'women') };
+        }
+      }
+      if (data?.success && Array.isArray(data?.data)) {
+        setProducts(data.data);
       }
     } catch (error) {
       console.error('Error loading women products:', error);

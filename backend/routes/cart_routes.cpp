@@ -8,6 +8,18 @@
 
 using json = nlohmann::json;
 
+namespace {
+    int safe_stoi(const char* v, int def = 0) {
+        if (!v || !*v) return def;
+        try { return std::stoi(v); } catch (...) { return def; }
+    }
+    double safe_stod(const char* v, double def = 0) {
+        if (!v || !*v) return def;
+        try { return std::stod(v); } catch (...) { return def; }
+    }
+    const char* safe_str(const char* v) { return (v && *v) ? v : ""; }
+}
+
 void setupCartRoutes(crow::SimpleApp& app) {
     // Get cart items for a user (using session/user_id)
     CROW_ROUTE(app, "/api/cart/<int>")
@@ -17,7 +29,8 @@ void setupCartRoutes(crow::SimpleApp& app) {
         PGconn* conn = db.getConnection();
         
         if (!db.isConnected()) {
-            return crow::response(500, "Database connection failed");
+            json r; r["success"]=false; r["message"]="Database connection failed";
+            return CORSHelper::jsonResponse(500, r.dump());
         }
         
         std::string query = R"(
@@ -38,8 +51,10 @@ void setupCartRoutes(crow::SimpleApp& app) {
                                      paramLengths, paramFormats, 0);
         
         if (PQresultStatus(res) != PGRES_TUPLES_OK) {
+            const char* err = PQresultErrorMessage(res);
             PQclear(res);
-            return crow::response(500, "Query failed: " + std::string(PQerrorMessage(conn)));
+            json r; r["success"]=false; r["message"]=std::string("Query failed: ")+(err?err:PQerrorMessage(conn));
+            return CORSHelper::jsonResponse(500, r.dump());
         }
         
         json cartItems = json::array();
@@ -47,14 +62,14 @@ void setupCartRoutes(crow::SimpleApp& app) {
         
         for (int i = 0; i < rows; i++) {
             json item;
-            item["id"] = std::stoi(PQgetvalue(res, i, 0));
-            item["user_id"] = std::stoi(PQgetvalue(res, i, 1));
-            item["product_id"] = std::stoi(PQgetvalue(res, i, 2));
-            item["quantity"] = std::stoi(PQgetvalue(res, i, 3));
-            item["price"] = std::stod(PQgetvalue(res, i, 4));
-            item["created_at"] = PQgetvalue(res, i, 5);
-            item["product_name"] = PQgetvalue(res, i, 6);
-            item["product_image"] = PQgetvalue(res, i, 7);
+            item["id"] = safe_stoi(PQgetvalue(res, i, 0));
+            item["user_id"] = safe_stoi(PQgetvalue(res, i, 1));
+            item["product_id"] = safe_stoi(PQgetvalue(res, i, 2));
+            item["quantity"] = safe_stoi(PQgetvalue(res, i, 3));
+            item["price"] = safe_stod(PQgetvalue(res, i, 4));
+            item["created_at"] = safe_str(PQgetvalue(res, i, 5));
+            item["product_name"] = safe_str(PQgetvalue(res, i, 6));
+            item["product_image"] = safe_str(PQgetvalue(res, i, 7));
             cartItems.push_back(item);
         }
         
@@ -76,13 +91,18 @@ void setupCartRoutes(crow::SimpleApp& app) {
             
             int user_id = body["user_id"].get<int>();
             int product_id = body["product_id"].get<int>();
-            int quantity = body.value("quantity", 1);
+            int quantity = 1;
+            if (body.contains("quantity") && !body["quantity"].is_null()) {
+                try { quantity = body["quantity"].get<int>(); } catch (...) {}
+                if (quantity < 1) quantity = 1;
+            }
             
             auto& db = DatabaseConnection::getInstance();
             PGconn* conn = db.getConnection();
             
             if (!db.isConnected()) {
-                return crow::response(500, "Database connection failed");
+                json r; r["success"]=false; r["message"]="Database connection failed";
+                return CORSHelper::jsonResponse(500, r.dump());
             }
             
             // Get product price
@@ -100,10 +120,10 @@ void setupCartRoutes(crow::SimpleApp& app) {
                 json response;
                 response["success"] = false;
                 response["message"] = "Product not found";
-                return crow::response(404, response.dump());
+                return CORSHelper::jsonResponse(404, response.dump());
             }
             
-            double price = std::stod(PQgetvalue(priceRes, 0, 0));
+            double price = safe_stod(PQgetvalue(priceRes, 0, 0));
             PQclear(priceRes);
             
             // Check if item already exists in cart
@@ -118,8 +138,8 @@ void setupCartRoutes(crow::SimpleApp& app) {
             
             if (PQresultStatus(checkRes) == PGRES_TUPLES_OK && PQntuples(checkRes) > 0) {
                 // Update existing item
-                int existingId = std::stoi(PQgetvalue(checkRes, 0, 0));
-                int existingQty = std::stoi(PQgetvalue(checkRes, 0, 1));
+                int existingId = safe_stoi(PQgetvalue(checkRes, 0, 0));
+                int existingQty = safe_stoi(PQgetvalue(checkRes, 0, 1));
                 PQclear(checkRes);
                 
                 int newQty = existingQty + quantity;
@@ -134,11 +154,12 @@ void setupCartRoutes(crow::SimpleApp& app) {
                                                    updateParams, updateLengths, updateFormats, 0);
                 
                 if (PQresultStatus(updateRes) != PGRES_COMMAND_OK) {
+                    const char* err = PQresultErrorMessage(updateRes);
                     PQclear(updateRes);
                     json response;
                     response["success"] = false;
-                    response["message"] = "Failed to update cart";
-                    return crow::response(500, response.dump());
+                    response["message"] = std::string("Failed to update cart: ") + (err ? err : "");
+                    return CORSHelper::jsonResponse(500, response.dump());
                 }
                 PQclear(updateRes);
             } else {
@@ -165,11 +186,12 @@ void setupCartRoutes(crow::SimpleApp& app) {
                                                    insertParams, insertLengths, insertFormats, 0);
                 
                 if (PQresultStatus(insertRes) != PGRES_TUPLES_OK) {
+                    const char* err = PQresultErrorMessage(insertRes);
                     PQclear(insertRes);
                     json response;
                     response["success"] = false;
-                    response["message"] = "Failed to add to cart";
-                    return crow::response(500, response.dump());
+                    response["message"] = std::string("Failed to add to cart: ") + (err ? err : "");
+                    return CORSHelper::jsonResponse(500, response.dump());
                 }
                 PQclear(insertRes);
             }
@@ -183,7 +205,7 @@ void setupCartRoutes(crow::SimpleApp& app) {
             json response;
             response["success"] = false;
             response["message"] = "Invalid request: " + std::string(e.what());
-            return crow::response(400, response.dump());
+            return CORSHelper::jsonResponse(400, response.dump());
         }
     });
     
@@ -195,7 +217,8 @@ void setupCartRoutes(crow::SimpleApp& app) {
         PGconn* conn = db.getConnection();
         
         if (!db.isConnected()) {
-            return crow::response(500, "Database connection failed");
+            json r; r["success"]=false; r["message"]="Database connection failed";
+            return CORSHelper::jsonResponse(500, r.dump());
         }
         
         std::string query = "DELETE FROM cart_items WHERE id = $1";
@@ -212,7 +235,7 @@ void setupCartRoutes(crow::SimpleApp& app) {
             json response;
             response["success"] = false;
             response["message"] = "Failed to remove item";
-            return crow::response(500, response.dump());
+            return CORSHelper::jsonResponse(500, response.dump());
         }
         
         PQclear(res);
@@ -220,7 +243,7 @@ void setupCartRoutes(crow::SimpleApp& app) {
         json response;
         response["success"] = true;
         response["message"] = "Item removed from cart";
-        return crow::response(200, response.dump());
+        return CORSHelper::jsonResponse(200, response.dump());
     });
     
     // Update cart item quantity
@@ -237,14 +260,15 @@ void setupCartRoutes(crow::SimpleApp& app) {
                 json response;
                 response["success"] = false;
                 response["message"] = "Quantity must be greater than 0";
-                return crow::response(400, response.dump());
+                return CORSHelper::jsonResponse(400, response.dump());
             }
             
             auto& db = DatabaseConnection::getInstance();
             PGconn* conn = db.getConnection();
             
             if (!db.isConnected()) {
-                return crow::response(500, "Database connection failed");
+                json r; r["success"]=false; r["message"]="Database connection failed";
+                return CORSHelper::jsonResponse(500, r.dump());
             }
             
             std::string query = "UPDATE cart_items SET quantity = $1 WHERE id = $2";
@@ -262,7 +286,7 @@ void setupCartRoutes(crow::SimpleApp& app) {
                 json response;
                 response["success"] = false;
                 response["message"] = "Failed to update cart";
-                return crow::response(500, response.dump());
+                return CORSHelper::jsonResponse(500, response.dump());
             }
             
             PQclear(res);
@@ -276,7 +300,7 @@ void setupCartRoutes(crow::SimpleApp& app) {
             json response;
             response["success"] = false;
             response["message"] = "Invalid request: " + std::string(e.what());
-            return crow::response(400, response.dump());
+            return CORSHelper::jsonResponse(400, response.dump());
         }
     });
 }

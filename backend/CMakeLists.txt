@@ -56,14 +56,32 @@ elseif(EXISTS "${CMAKE_SOURCE_DIR}/../include/nlohmann/json.hpp")
     include_directories(${CMAKE_SOURCE_DIR}/../include)
 endif()
 
+# Find CURL for Stripe
+find_package(CURL QUIET)
+if(NOT CURL_FOUND)
+    find_library(CURL_LIBRARY NAMES curl curl.dylib PATHS /usr/lib /usr/local/lib /opt/homebrew/lib)
+    find_path(CURL_INCLUDE_DIR NAMES curl/curl.h PATHS /usr/include /usr/local/include /opt/homebrew/include)
+    if(CURL_LIBRARY)
+        set(CURL_FOUND TRUE)
+        set(CURL_LIBRARIES ${CURL_LIBRARY})
+        if(CURL_INCLUDE_DIR)
+            include_directories(${CURL_INCLUDE_DIR})
+        endif()
+    endif()
+else()
+    include_directories(${CURL_INCLUDE_DIRS})
+endif()
+
 # Source files
 set(SOURCES
     main.cpp
     db/connection.cpp
+    utils/stripe_client.cpp
     routes/home_routes.cpp
     routes/product_routes.cpp
     routes/cart_routes.cpp
     routes/order_routes.cpp
+    routes/stripe_routes.cpp
 )
 
 # Executable
@@ -81,7 +99,12 @@ else()
         pthread
     )
 endif()
+if(CURL_FOUND)
+    target_link_libraries(lala_store ${CURL_LIBRARIES})
+endif()
 
-# Copy config file to build directory
+# Copy config files to build directory
 file(COPY ${CMAKE_SOURCE_DIR}/config/db_config.json 
+     DESTINATION ${CMAKE_BINARY_DIR}/config)
+file(COPY ${CMAKE_SOURCE_DIR}/config/stripe_config.json 
      DESTINATION ${CMAKE_BINARY_DIR}/config)

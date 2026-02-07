@@ -1,13 +1,16 @@
 #include <crow.h>
+#include <curl/curl.h>
 #include "db/connection.h"
 #include "routes/home_routes.h"
 #include "routes/product_routes.h"
 #include "routes/cart_routes.h"
 #include "routes/order_routes.h"
+#include "routes/stripe_routes.h"
 #include "utils/cors_helper.h"
 #include <iostream>
 
 int main() {
+    curl_global_init(CURL_GLOBAL_DEFAULT);
     crow::SimpleApp app;
     
     // Handle OPTIONS requests for CORS preflight
@@ -27,6 +30,7 @@ int main() {
     setupProductRoutes(app);
     setupCartRoutes(app);
     setupOrderRoutes(app);
+    setupStripeRoutes(app);
     
     // Initialize database connection
     auto& db = DatabaseConnection::getInstance();

@@ -29,7 +29,7 @@ const CartItem = ({ item }) => {
       </div>
       <div className="cart-item-details">
         <h3>{item.product_name}</h3>
-        <p className="cart-item-price">${item.price.toFixed(2)} each</p>
+        <p className="cart-item-price">${(item.price ?? 0).toFixed(2)} each</p>
       </div>
       <div className="cart-item-controls">
         <div className="quantity-controls">
@@ -48,7 +48,7 @@ const CartItem = ({ item }) => {
           </button>
         </div>
         <div className="cart-item-total">
-          ${(item.price * item.quantity).toFixed(2)}
+          ${((item.price ?? 0) * (item.quantity ?? 1)).toFixed(2)}
         </div>
         <button onClick={handleRemove} className="remove-btn">
           Remove

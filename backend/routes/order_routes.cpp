@@ -2,11 +2,24 @@
 #include "../db/connection.h"
 #include "../models/Order.h"
 #include "../utils/cors_helper.h"
+#include "../utils/stripe_client.h"
 #include <libpq-fe.h>
 #include <nlohmann/json.hpp>
 #include <sstream>
 
 using json = nlohmann::json;
+
+namespace {
+    int safe_stoi(const char* v, int def = 0) {
+        if (!v || !*v) return def;
+        try { return std::stoi(v); } catch (...) { return def; }
+    }
+    double safe_stod(const char* v, double def = 0) {
+        if (!v || !*v) return def;
+        try { return std::stod(v); } catch (...) { return def; }
+    }
+    const char* safe_str(const char* v) { return (v && *v) ? v : ""; }
+}
 
 void setupOrderRoutes(crow::SimpleApp& app) {
     // Create order from cart
@@ -17,23 +30,39 @@ void setupOrderRoutes(crow::SimpleApp& app) {
             auto body = json::parse(req.body);
             
             int user_id = body["user_id"].get<int>();
-            std::string shipping_address = body["shipping_address"].get<std::string>();
+            std::string shipping_address = body.value("shipping_address", "");
+            std::string customer_name = body.value("customer_name", "");
+            std::string phone = body.value("phone", "");
+            std::string payment_method = body.value("payment_method", "");
+            std::string payment_intent_id = body.value("payment_intent_id", "");
+            
+            bool isCardPayment = (payment_method == "card" || payment_method == "visa");
+            if (isCardPayment && payment_intent_id.empty()) {
+                json e; e["success"]=false; e["message"]="Card payment requires payment verification. Please complete card entry.";
+                return CORSHelper::jsonResponse(400, e.dump());
+            }
+            if (isCardPayment && !payment_intent_id.empty()) {
+                json verify = StripeClient::verifyPaymentIntent(payment_intent_id);
+                if (!verify.value("ok", false)) {
+                    json e; e["success"]=false; e["message"]="Payment verification failed. Please try again.";
+                    return CORSHelper::jsonResponse(400, e.dump());
+                }
+            }
             
             auto& db = DatabaseConnection::getInstance();
             PGconn* conn = db.getConnection();
             
             if (!db.isConnected()) {
-                return crow::response(500, "Database connection failed");
+                json e; e["success"]=false; e["message"]="Database connection failed";
+                return CORSHelper::jsonResponse(500, e.dump());
             }
             
             // Start transaction
             PGresult* beginRes = PQexec(conn, "BEGIN");
             if (PQresultStatus(beginRes) != PGRES_COMMAND_OK) {
                 PQclear(beginRes);
-                json response;
-                response["success"] = false;
-                response["message"] = "Failed to start transaction";
-                return crow::response(500, response.dump());
+                json e; e["success"]=false; e["message"]="Failed to start transaction";
+                return CORSHelper::jsonResponse(500, e.dump());
             }
             PQclear(beginRes);
             
@@ -55,20 +84,16 @@ void setupOrderRoutes(crow::SimpleApp& app) {
             if (PQresultStatus(cartRes) != PGRES_TUPLES_OK) {
                 PQexec(conn, "ROLLBACK");
                 PQclear(cartRes);
-                json response;
-                response["success"] = false;
-                response["message"] = "Failed to get cart items";
-                return crow::response(500, response.dump());
+                json e; e["success"]=false; e["message"]="Failed to get cart items: "+std::string(PQerrorMessage(conn));
+                return CORSHelper::jsonResponse(500, e.dump());
             }
             
             int cartRows = PQntuples(cartRes);
             if (cartRows == 0) {
                 PQexec(conn, "ROLLBACK");
                 PQclear(cartRes);
-                json response;
-                response["success"] = false;
-                response["message"] = "Cart is empty";
-                return crow::response(400, response.dump());
+                json e; e["success"]=false; e["message"]="Cart is empty";
+                return CORSHelper::jsonResponse(400, e.dump());
             }
             
             double total_amount = 0.0;
@@ -78,42 +103,60 @@ void setupOrderRoutes(crow::SimpleApp& app) {
             std::vector<double> prices;
             
             for (int i = 0; i < cartRows; i++) {
-                cartItemIds.push_back(std::stoi(PQgetvalue(cartRes, i, 0)));
-                productIds.push_back(std::stoi(PQgetvalue(cartRes, i, 1)));
-                quantities.push_back(std::stoi(PQgetvalue(cartRes, i, 2)));
-                double price = std::stod(PQgetvalue(cartRes, i, 3));
+                cartItemIds.push_back(safe_stoi(PQgetvalue(cartRes, i, 0)));
+                productIds.push_back(safe_stoi(PQgetvalue(cartRes, i, 1)));
+                quantities.push_back(safe_stoi(PQgetvalue(cartRes, i, 2)));
+                double price = safe_stod(PQgetvalue(cartRes, i, 3));
                 prices.push_back(price);
                 total_amount += price * quantities[i];
             }
             PQclear(cartRes);
             
-            // Create order
-            std::string orderQuery = R"(
-                INSERT INTO orders (user_id, total_amount, status, shipping_address)
-                VALUES ($1, $2, 'pending', $3)
-                RETURNING id
-            )";
+            // Create order (include stripe_payment_intent_id for card payments)
+            std::string orderQuery;
+            if (isCardPayment && !payment_intent_id.empty()) {
+                orderQuery = R"(
+                    INSERT INTO orders (user_id, total_amount, status, shipping_address, customer_name, phone, payment_method, stripe_payment_intent_id)
+                    VALUES ($1, $2, 'pending', $3, $4, $5, $6, $7)
+                    RETURNING id
+                )";
+            } else {
+                orderQuery = R"(
+                    INSERT INTO orders (user_id, total_amount, status, shipping_address, customer_name, phone, payment_method)
+                    VALUES ($1, $2, 'pending', $3, $4, $5, $6)
+                    RETURNING id
+                )";
+            }
             
             std::string totalStr = std::to_string(total_amount);
-            const char* orderParams[3] = {userIdStr.c_str(), totalStr.c_str(), shipping_address.c_str()};
-            int orderLengths[3] = {static_cast<int>(userIdStr.length()), 
-                                  static_cast<int>(totalStr.length()),
-                                  static_cast<int>(shipping_address.length())};
-            int orderFormats[3] = {0, 0, 0};
-            
-            PGresult* orderRes = PQexecParams(conn, orderQuery.c_str(), 3, nullptr, 
-                                             orderParams, orderLengths, orderFormats, 0);
+            PGresult* orderRes;
+            if (isCardPayment && !payment_intent_id.empty()) {
+                const char* orderParams[7] = {userIdStr.c_str(), totalStr.c_str(), shipping_address.c_str(),
+                    customer_name.c_str(), phone.c_str(), payment_method.c_str(), payment_intent_id.c_str()};
+                int orderLengths[7] = {static_cast<int>(userIdStr.length()), static_cast<int>(totalStr.length()),
+                    static_cast<int>(shipping_address.length()), static_cast<int>(customer_name.length()),
+                    static_cast<int>(phone.length()), static_cast<int>(payment_method.length()),
+                    static_cast<int>(payment_intent_id.length())};
+                int orderFormats[7] = {0,0,0,0,0,0,0};
+                orderRes = PQexecParams(conn, orderQuery.c_str(), 7, nullptr, orderParams, orderLengths, orderFormats, 0);
+            } else {
+                const char* orderParams[6] = {userIdStr.c_str(), totalStr.c_str(), shipping_address.c_str(),
+                    customer_name.c_str(), phone.c_str(), payment_method.c_str()};
+                int orderLengths[6] = {static_cast<int>(userIdStr.length()), static_cast<int>(totalStr.length()),
+                    static_cast<int>(shipping_address.length()), static_cast<int>(customer_name.length()),
+                    static_cast<int>(phone.length()), static_cast<int>(payment_method.length())};
+                int orderFormats[6] = {0,0,0,0,0,0};
+                orderRes = PQexecParams(conn, orderQuery.c_str(), 6, nullptr, orderParams, orderLengths, orderFormats, 0);
+            }
             
             if (PQresultStatus(orderRes) != PGRES_TUPLES_OK) {
                 PQexec(conn, "ROLLBACK");
                 PQclear(orderRes);
-                json response;
-                response["success"] = false;
-                response["message"] = "Failed to create order";
-                return crow::response(500, response.dump());
+                json e; e["success"]=false; e["message"]="Failed to create order: "+std::string(PQerrorMessage(conn));
+                return CORSHelper::jsonResponse(500, e.dump());
             }
             
-            int order_id = std::stoi(PQgetvalue(orderRes, 0, 0));
+            int order_id = safe_stoi(PQgetvalue(orderRes, 0, 0));
             PQclear(orderRes);
             
             // Create order items
@@ -184,13 +227,11 @@ void setupOrderRoutes(crow::SimpleApp& app) {
             response["success"] = true;
             response["message"] = "Order created successfully";
             response["order_id"] = order_id;
-            return crow::response(200, response.dump());
+            return CORSHelper::jsonResponse(200, response.dump());
             
         } catch (const std::exception& e) {
-            json response;
-            response["success"] = false;
-            response["message"] = "Invalid request: " + std::string(e.what());
-            return crow::response(400, response.dump());
+            json resp; resp["success"]=false; resp["message"]="Invalid request: "+std::string(e.what());
+            return CORSHelper::jsonResponse(400, resp.dump());
         }
     });
     
@@ -230,12 +271,12 @@ void setupOrderRoutes(crow::SimpleApp& app) {
         
         for (int i = 0; i < rows; i++) {
             json order;
-            order["id"] = std::stoi(PQgetvalue(res, i, 0));
-            order["user_id"] = std::stoi(PQgetvalue(res, i, 1));
-            order["total_amount"] = std::stod(PQgetvalue(res, i, 2));
-            order["status"] = PQgetvalue(res, i, 3);
-            order["shipping_address"] = PQgetvalue(res, i, 4);
-            order["created_at"] = PQgetvalue(res, i, 5);
+            order["id"] = safe_stoi(PQgetvalue(res, i, 0));
+            order["user_id"] = safe_stoi(PQgetvalue(res, i, 1));
+            order["total_amount"] = safe_stod(PQgetvalue(res, i, 2));
+            order["status"] = safe_str(PQgetvalue(res, i, 3));
+            order["shipping_address"] = safe_str(PQgetvalue(res, i, 4));
+            order["created_at"] = safe_str(PQgetvalue(res, i, 5));
             orders.push_back(order);
         }
         

@@ -76,6 +76,80 @@
   border: 1px solid rgba(255, 255, 255, 0.06);
 }
 
+.size-selector-section {
+  margin-bottom: 1.5rem;
+}
+
+.size-label {
+  display: block;
+  font-weight: 600;
+  color: var(--text);
+  margin-bottom: 0.5rem;
+}
+
+.size-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.size-btn {
+  min-width: 48px;
+  padding: 0.6rem 1rem;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--text);
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 150ms ease;
+}
+
+.size-btn:hover {
+  border-color: rgba(214, 199, 161, 0.4);
+  background: rgba(214, 199, 161, 0.08);
+}
+
+.size-btn.active {
+  border-color: var(--beige);
+  background: rgba(214, 199, 161, 0.15);
+  color: var(--beige);
+}
+
+.size-chart-section {
+  margin-bottom: 1.5rem;
+}
+
+.size-chart-details summary {
+  cursor: pointer;
+  color: var(--beige);
+  font-weight: 600;
+  padding: 0.5rem 0;
+}
+
+.size-chart-table {
+  width: 100%;
+  margin-top: 1rem;
+  border-collapse: collapse;
+  font-size: 0.9rem;
+}
+
+.size-chart-table th,
+.size-chart-table td {
+  padding: 0.5rem 0.75rem;
+  border: 1px solid var(--border);
+  text-align: left;
+}
+
+.size-chart-table th {
+  background: rgba(214, 199, 161, 0.08);
+  color: var(--beige);
+}
+
+.size-chart-table td {
+  color: var(--muted);
+}
+
 .product-meta {
   margin-bottom: 2rem;
   padding: 1.5rem;

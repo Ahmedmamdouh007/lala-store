@@ -1,0 +1,4 @@
+{
+  "secret_key": "sk_test_YOUR_STRIPE_SECRET_KEY",
+  "publishable_key": "pk_test_YOUR_STRIPE_PUBLISHABLE_KEY"
+}
