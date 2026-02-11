@@ -127,6 +127,8 @@ void setupProductRoutes(crow::SimpleApp& app) {
     });
 
     // Get products by gender
+    // INTENTIONALLY VULNERABLE FOR ACADEMIC SECURITY TESTING (localhost lab only)
+    // SQL injection: query built by string concatenation, no parameter binding
     CROW_ROUTE(app, "/api/products/<string>")
     ([](const std::string& gender) {
         auto& db = DatabaseConnection::getInstance();
@@ -136,22 +138,15 @@ void setupProductRoutes(crow::SimpleApp& app) {
             json e; e["success"]=false; e["message"]="Database connection failed";
             return CORSHelper::jsonResponse(500, e.dump());
         }
-        std::string query = R"(
-            SELECT p.id, p.name, p.description, p.price, p.image_url, 
-                   p.category_id, c.name as category_name, p.gender, 
-                   COALESCE(p.stock_quantity, 0), p.created_at, p.sizes, p.size_chart
-            FROM products p
-            LEFT JOIN categories c ON p.category_id = c.id
-            WHERE p.gender = $1 AND COALESCE(p.stock_quantity, 0) > 0
-            ORDER BY p.created_at DESC
-        )";
+        std::string query = "SELECT p.id, p.name, p.description, p.price, p.image_url, "
+                   "p.category_id, c.name as category_name, p.gender, "
+                   "COALESCE(p.stock_quantity, 0), p.created_at, p.sizes, p.size_chart "
+                   "FROM products p "
+                   "LEFT JOIN categories c ON p.category_id = c.id "
+                   "WHERE p.gender = '" + gender + "' AND COALESCE(p.stock_quantity, 0) > 0 "
+                   "ORDER BY p.created_at DESC";
         
-        const char* paramValues[1] = {gender.c_str()};
-        int paramLengths[1] = {static_cast<int>(gender.length())};
-        int paramFormats[1] = {0};
-        
-        PGresult* res = PQexecParams(conn, query.c_str(), 1, nullptr, paramValues, 
-                                     paramLengths, paramFormats, 0);
+        PGresult* res = PQexec(conn, query.c_str());
         
         if (PQresultStatus(res) != PGRES_TUPLES_OK) {
             const char* err = PQresultErrorMessage(res);
