@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { getProductById } from '../api/api';
 import { useCart } from '../context/CartContext';
+import { fallbackProducts, fallbackMenProducts, fallbackWomenProducts } from '../data/fallbackProducts';
 import './ProductDetails.css';
 
 const ProductDetails = () => {
@@ -10,27 +11,55 @@ const ProductDetails = () => {
   const [loading, setLoading] = useState(true);
   const [quantity, setQuantity] = useState(1);
   const [selectedSize, setSelectedSize] = useState('');
+  const [usingFallback, setUsingFallback] = useState(false);
   const { addItemToCart } = useCart();
 
   useEffect(() => {
     loadProduct();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id]);
 
   const loadProduct = async () => {
     try {
       setLoading(true);
+      setUsingFallback(false);
       setSelectedSize('');
-      const response = await getProductById(id);
-      if (response.data.success) {
-        const p = response.data.data;
-        setProduct(p);
-        if (p.sizes) {
-          const firstSize = p.sizes.split(',')[0]?.trim() || '';
+
+      const allFallback = [
+        ...fallbackProducts,
+        ...fallbackMenProducts,
+        ...fallbackWomenProducts,
+      ];
+      const numericId = Number(id);
+
+      // Try backend first
+      try {
+        const response = await getProductById(id);
+        if (response.data?.success && response.data.data) {
+          const p = response.data.data;
+          setProduct(p);
+          if (p.sizes) {
+            const firstSize = p.sizes.split(',')[0]?.trim() || '';
+            setSelectedSize(firstSize);
+          }
+          return;
+        }
+      } catch (error) {
+        console.error('Error loading product from backend:', error);
+      }
+
+      // Fallback to local demo data (when backend is offline or product missing)
+      const local = allFallback.find((p) => p.id === numericId);
+      if (local) {
+        setProduct(local);
+        if (local.sizes) {
+          const firstSize = local.sizes.split(',')[0]?.trim() || '';
           setSelectedSize(firstSize);
         }
+        setUsingFallback(true);
+      } else {
+        setProduct(null);
       }
-    } catch (error) {
-      console.error('Error loading product:', error);
     } finally {
       setLoading(false);
     }
@@ -87,6 +116,11 @@ const ProductDetails = () => {
           <p className="product-category">{product.category_name || 'Uncategorized'}</p>
           <p className="product-price">${(product.price ?? 0).toFixed(2)}</p>
           <p className="product-description">{product.description}</p>
+          {usingFallback && (
+            <p className="fallback-notice">
+              Showing demo product (backend offline). Start the backend for live data.
+            </p>
+          )}
           <div className="product-meta">
             <p><strong>Gender:</strong> {product.gender}</p>
             <p><strong>Stock:</strong> {product.stock_quantity} available</p>

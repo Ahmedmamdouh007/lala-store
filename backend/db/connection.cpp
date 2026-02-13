@@ -1,6 +1,7 @@
 #include "connection.h"
 #include <fstream>
 #include <iostream>
+#include <sstream>
 #include <vector>
 #include <nlohmann/json.hpp>
 
@@ -21,62 +22,110 @@ DatabaseConnection::~DatabaseConnection() {
 }
 
 void DatabaseConnection::loadConfig() {
-    std::ifstream configFile("../config/db_config.json");
+    const std::vector<std::string> configPaths = {
+        "../config/db_config.json",
+        "config/db_config.json",
+        "backend/config/db_config.json",
+    };
+    std::ifstream configFile;
+    for (const auto& path : configPaths) {
+        configFile.open(path);
+        if (configFile.is_open())
+            break;
+    }
     if (configFile.is_open()) {
         json config;
         configFile >> config;
-        host = config["host"].get<std::string>();
-        port = config["port"].get<int>();
-        database = config["database"].get<std::string>();
-        user = config["user"].get<std::string>();
-        password = config["password"].get<std::string>();
-    } else {
-        // Fallback to hardcoded values
-        host = "localhost";
-        port = 5432;
-        database = "Lala store";
-        user = "postgres";
-        password = "1234";
+        if (config.contains("database_path") && config["database_path"].is_string())
+            databasePath = config["database_path"].get<std::string>();
+        configFile.close();
     }
+    if (databasePath.empty()) {
+        databasePath = "database/lala-store.db";
+    }
+}
+
+static int tryOpenDb(const std::string& path, sqlite3** out) {
+    return sqlite3_open(path.c_str(), out);
 }
 
 bool DatabaseConnection::connect() {
-    // Build connection string - escape database name if it contains spaces
-    std::string dbname = database;
-    // PostgreSQL connection string format: key=value pairs, space in value needs quoting
-    std::string connString = "host=" + host + 
-                            " port=" + std::to_string(port) + 
-                            " dbname='" + database + "'" +
-                            " user=" + user + 
-                            " password=" + password;
-    
-    conn = PQconnectdb(connString.c_str());
-    
-    if (PQstatus(conn) != CONNECTION_OK) {
-        std::cerr << "Connection to database failed: " << PQerrorMessage(conn) << std::endl;
-        PQfinish(conn);
-        conn = nullptr;
+    // Try paths relative to CWD: project root, backend/, or build/Release
+    std::vector<std::string> tryPaths = {
+        databasePath,
+        "../" + databasePath,
+        "../../" + databasePath,
+        "../../../" + databasePath,
+        "backend/" + databasePath,
+    };
+    int rc = SQLITE_OK;
+    for (const auto& path : tryPaths) {
+        rc = tryOpenDb(path, &conn);
+        if (rc == SQLITE_OK && conn != nullptr) {
+            databasePath = path;
+            break;
+        }
+        if (conn) {
+            sqlite3_close(conn);
+            conn = nullptr;
+        }
+    }
+    if (rc != SQLITE_OK || conn == nullptr) {
+        std::cerr << "SQLite open failed: " << (conn ? sqlite3_errmsg(conn) : "out of memory") << std::endl;
+        if (conn) {
+            sqlite3_close(conn);
+            conn = nullptr;
+        }
         return false;
     }
-    
-    std::cout << "Connected to PostgreSQL database successfully!" << std::endl;
+    sqlite3_exec(conn, "PRAGMA foreign_keys = ON;", nullptr, nullptr, nullptr);
+    std::cout << "Connected to SQLite database: " << databasePath << std::endl;
     return true;
 }
 
-PGconn* DatabaseConnection::getConnection() {
-    if (!isConnected()) {
-        connect();
+bool DatabaseConnection::ensureSchema() {
+    const std::vector<std::string> schemaPaths = {
+        "database/schema_sqlite.sql",
+        "../database/schema_sqlite.sql",
+        "../../database/schema_sqlite.sql",
+        "../../../database/schema_sqlite.sql",
+        "backend/../database/schema_sqlite.sql",
+    };
+    std::ifstream schemaFile;
+    for (const auto& path : schemaPaths) {
+        schemaFile.open(path);
+        if (schemaFile.is_open())
+            break;
     }
-    return conn;
+    if (!schemaFile.is_open())
+        return true;
+    std::stringstream buf;
+    buf << schemaFile.rdbuf();
+    schemaFile.close();
+    std::string sql = buf.str();
+    char* errMsg = nullptr;
+    int rc = sqlite3_exec(conn, sql.c_str(), nullptr, nullptr, &errMsg);
+    if (rc != SQLITE_OK && errMsg) {
+        std::cerr << "Schema exec error: " << errMsg << std::endl;
+        sqlite3_free(errMsg);
+        return false;
+    }
+    if (errMsg) sqlite3_free(errMsg);
+    return true;
 }
 
 bool DatabaseConnection::isConnected() {
-    return conn != nullptr && PQstatus(conn) == CONNECTION_OK;
+    return conn != nullptr;
+}
+
+sqlite3* DatabaseConnection::getConnection() {
+    if (!conn && !connect()) return nullptr;
+    return conn;
 }
 
 void DatabaseConnection::closeConnection() {
     if (conn != nullptr) {
-        PQfinish(conn);
+        sqlite3_close(conn);
         conn = nullptr;
     }
 }

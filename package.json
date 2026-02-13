@@ -1,0 +1,16 @@
+{
+  "name": "lala-store",
+  "private": true,
+  "scripts": {
+    "seed:men": "node scripts/seed_men_products.js",
+    "test:api": "node scripts/test_men_products_api.js",
+    "test:integration": "node scripts/test_backend_integration.js",
+    "test:process": "node scripts/test_backend_process.js",
+    "ensure-db": "node scripts/ensure_sqlite_db.js",
+    "ensure-db:postgres": "node scripts/ensure_database.js"
+  },
+  "dependencies": {
+    "pg": "^8.11.3",
+    "sql.js": "^1.14.0"
+  }
+}

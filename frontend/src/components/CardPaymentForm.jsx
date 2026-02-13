@@ -58,7 +58,7 @@ function CardPaymentFormInner({ amountCents, onSuccess, onError, disabled }) {
       <div className="card-element-wrapper">
         <CardElement options={CARD_ELEMENT_OPTIONS} />
       </div>
-      <p className="card-payment-note">Secure payment by Stripe. Your card data is never stored.</p>
+      <p className="card-payment-note">Visa/Mastercard via Stripe. Card data is sent only to Stripe — never to our servers (PCI-DSS safe).</p>
       <button type="submit" className="pay-with-card-btn" disabled={!stripe || loading || disabled}>
         {loading ? 'Processing...' : 'Pay with Card'}
       </button>
@@ -77,11 +77,16 @@ export default function CardPaymentForm({ publishableKey, amountCents, onSuccess
     }
   }, [publishableKey]);
 
-  if (!publishableKey || !publishableKey.startsWith('pk_') || publishableKey.includes('YOUR_')) {
+  if (!publishableKey || !publishableKey.startsWith('pk_') || publishableKey.includes('YOUR_') || publishableKey.includes('placeholder')) {
     return (
       <div className="card-payment-placeholder">
         <p>Card payment (Visa/Mastercard) requires Stripe setup.</p>
         <p>Add your keys to <code>backend/config/stripe_config.json</code> or use Cash on Delivery.</p>
+        <p style={{ marginTop: '10px', fontSize: '14px' }}>
+          <a href="https://dashboard.stripe.com/test/apikeys" target="_blank" rel="noopener noreferrer" style={{ color: '#d6c7a1' }}>
+            Get free test keys from Stripe →
+          </a>
+        </p>
       </div>
     );
   }

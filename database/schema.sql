@@ -93,14 +93,16 @@ INSERT INTO users (username, email, password_hash) VALUES
     ('testuser', 'test@example.com', '$2b$10$example_hash_replace_in_production')
 ON CONFLICT (username) DO NOTHING;
 
--- Insert sample products
-INSERT INTO products (name, description, price, image_url, category_id, gender, stock_quantity) VALUES
-    ('Classic White T-Shirt', 'Comfortable cotton t-shirt for everyday wear', 19.99, 'https://via.placeholder.com/300x400?text=White+T-Shirt', 1, 'men', 50),
-    ('Blue Denim Jeans', 'Classic fit blue jeans', 49.99, 'https://via.placeholder.com/300x400?text=Blue+Jeans', 2, 'men', 30),
-    ('Summer Dress', 'Light and airy summer dress', 39.99, 'https://via.placeholder.com/300x400?text=Summer+Dress', 3, 'women', 25),
-    ('Leather Jacket', 'Stylish black leather jacket', 89.99, 'https://via.placeholder.com/300x400?text=Leather+Jacket', 4, 'men', 15),
-    ('Floral Print Dress', 'Beautiful floral print dress', 45.99, 'https://via.placeholder.com/300x400?text=Floral+Dress', 3, 'women', 20),
-    ('Sneakers', 'Comfortable running sneakers', 59.99, 'https://via.placeholder.com/300x400?text=Sneakers', 5, 'unisex', 40),
-    ('Casual Shirt', 'Button-down casual shirt', 34.99, 'https://via.placeholder.com/300x400?text=Casual+Shirt', 1, 'men', 35),
-    ('Maxi Dress', 'Elegant long maxi dress', 55.99, 'https://via.placeholder.com/300x400?text=Maxi+Dress', 3, 'women', 18)
-ON CONFLICT DO NOTHING;
+-- Insert sample products (run once; no ON CONFLICT - products table has no unique on name)
+INSERT INTO products (name, description, price, image_url, category_id, gender, stock_quantity)
+SELECT * FROM (VALUES
+    ('Classic White T-Shirt', 'Comfortable cotton t-shirt for everyday wear', 19.99::decimal, 'https://via.placeholder.com/300x400?text=White+T-Shirt', 1, 'men'::varchar, 50),
+    ('Blue Denim Jeans', 'Classic fit blue jeans', 49.99::decimal, 'https://via.placeholder.com/300x400?text=Blue+Jeans', 2, 'men'::varchar, 30),
+    ('Summer Dress', 'Light and airy summer dress', 39.99::decimal, 'https://via.placeholder.com/300x400?text=Summer+Dress', 3, 'women'::varchar, 25),
+    ('Leather Jacket', 'Stylish black leather jacket', 89.99::decimal, 'https://via.placeholder.com/300x400?text=Leather+Jacket', 4, 'men'::varchar, 15),
+    ('Floral Print Dress', 'Beautiful floral print dress', 45.99::decimal, 'https://via.placeholder.com/300x400?text=Floral+Dress', 3, 'women'::varchar, 20),
+    ('Sneakers', 'Comfortable running sneakers', 59.99::decimal, 'https://via.placeholder.com/300x400?text=Sneakers', 5, 'unisex'::varchar, 40),
+    ('Casual Shirt', 'Button-down casual shirt', 34.99::decimal, 'https://via.placeholder.com/300x400?text=Casual+Shirt', 1, 'men'::varchar, 35),
+    ('Maxi Dress', 'Elegant long maxi dress', 55.99::decimal, 'https://via.placeholder.com/300x400?text=Maxi+Dress', 3, 'women'::varchar, 18)
+) AS v(name, description, price, image_url, category_id, gender, stock_quantity)
+WHERE NOT EXISTS (SELECT 1 FROM products LIMIT 1);

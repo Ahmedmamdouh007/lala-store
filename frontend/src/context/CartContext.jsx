@@ -52,11 +52,26 @@ export const CartProvider = ({ children }) => {
         setToast({ message: 'Added to cart ✓', type: 'success' });
         return true;
       }
-      setToast({ message: response.data?.message || 'Could not add to cart', type: 'error' });
+      const errorMsg = response.data?.message || 'Could not add to cart';
+      console.error('Cart error:', errorMsg);
+      setToast({ message: errorMsg, type: 'error' });
       return false;
     } catch (error) {
       console.error('Error adding to cart:', error);
-      setToast({ message: 'Could not add to cart. Please try again.', type: 'error' });
+      let errorMessage = 'Could not add to cart. Please try again.';
+      
+      if (error.response) {
+        // Server responded with error status
+        const serverError = error.response.data?.message || `Server error: ${error.response.status}`;
+        errorMessage = serverError;
+        console.error('Server error:', error.response.status, serverError);
+      } else if (error.request) {
+        // Request was made but no response received
+        errorMessage = 'Backend server is not responding. Please ensure the backend is running on port 8001.';
+        console.error('No response from server');
+      }
+      
+      setToast({ message: errorMessage, type: 'error' });
       return false;
     }
   };

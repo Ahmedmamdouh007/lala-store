@@ -4,6 +4,7 @@ frontend/node_modules/
 
 # Build outputs
 backend/build/
+backend/build_mingw/
 backend/cmake-build-*/
 *.o
 *.a
@@ -28,6 +29,10 @@ npm-debug.log*
 
 # Runtime / temp files
 *.pid
+
+# SQLite database (created from database/schema_sqlite.sql on first run)
+database/lala-store.db
+*.db
 
 # Environment
 .env

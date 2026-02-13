@@ -6,6 +6,7 @@
 
 namespace StripeClient {
     std::string getPublishableKey();
+    std::string getWebhookSecret();
     // Initialize - load config. Call once at startup.
     void init();
     
@@ -15,6 +16,9 @@ namespace StripeClient {
     
     // Verify PaymentIntent with Stripe API. Returns json with status, ok
     nlohmann::json verifyPaymentIntent(const std::string& payment_intent_id);
+
+    // Get Visa-safe payment details only (status, card_brand, card_last4). Never card number or CVV.
+    nlohmann::json getPaymentIntentDetails(const std::string& payment_intent_id);
 }
 
 #endif

@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { getProductsByGender, getAllProducts } from '../api/api';
+import { fallbackMenProducts } from '../data/fallbackProducts';
 import ProductCard from '../components/ProductCard';
 import './Men.css';
 
@@ -7,6 +8,7 @@ const Men = () => {
   const [products, setProducts] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [usingFallback, setUsingFallback] = useState(false);
 
   useEffect(() => {
     loadProducts();
@@ -16,6 +18,7 @@ const Men = () => {
     try {
       setLoading(true);
       setError(null);
+      setUsingFallback(false);
       let data;
       try {
         const response = await getProductsByGender('men');
@@ -26,19 +29,18 @@ const Men = () => {
           data = { success: true, data: fallback.data.data.filter((p) => (p.gender || '').toLowerCase() === 'men') };
         }
       }
-      if (data?.success && Array.isArray(data?.data)) {
+      if (data?.success && Array.isArray(data?.data) && data.data.length > 0) {
+        setProducts(data.data);
+      } else if (data?.data?.length) {
         setProducts(data.data);
       } else {
-        setProducts(data?.data ?? []);
+        setProducts(fallbackMenProducts);
+        setUsingFallback(true);
       }
     } catch (err) {
       console.error('Error loading men products:', err);
-      const serverMsg = err.response?.data?.message;
-      const msg = err.code === 'ECONNABORTED'
-        ? 'Request timed out. Is the backend running on port 8001?'
-        : serverMsg || err.message || 'Failed to load products. Run ./start_backend.sh';
-      setError(msg);
-      setProducts([]);
+      setProducts(fallbackMenProducts);
+      setUsingFallback(true);
     } finally {
       setLoading(false);
     }
@@ -85,6 +87,9 @@ const Men = () => {
         <h1>Men's Collection</h1>
         <p>Discover our latest men's fashion</p>
       </div>
+      {usingFallback && (
+        <p className="fallback-notice">Showing demo products (backend offline). Start the backend for live data.</p>
+      )}
       {products.length === 0 ? (
         <p className="no-products">No men's products available at the moment.</p>
       ) : (

@@ -1,50 +1,35 @@
 #!/bin/bash
+# LALA STORE - Start Backend (macOS / Linux)
+# Tries build_mingw (optional) then build. Uses SQLite: database/lala-store.db
 
-# LALA STORE - Start Backend Script (macOS/Linux)
+set -e
+cd "$(dirname "$0")"
 
 echo "Starting LALA STORE Backend..."
 echo ""
 
-cd "$(dirname "$0")/backend"
+# Run from project root so database path resolves
+ROOT="$(pwd)"
+EXECUTABLE=""
+RUN_DIR="$ROOT"
 
-# Ensure PostgreSQL tools are available (Homebrew)
-if ! command -v psql > /dev/null 2>&1; then
-    for PG_PREFIX in "/usr/local/opt/postgresql@15" "/usr/local/opt/postgresql@14" "/opt/homebrew/opt/postgresql@15" "/opt/homebrew/opt/postgresql@14"; do
-        if [ -d "$PG_PREFIX/bin" ]; then
-            export PATH="$PG_PREFIX/bin:$PATH"
-            break
-        fi
-    done
+if [ -f "backend/build/lala_store" ]; then
+  EXECUTABLE="backend/build/lala_store"
+  RUN_DIR="backend/build"
+elif [ -f "backend/build/Release/lala_store" ]; then
+  EXECUTABLE="backend/build/Release/lala_store"
+  RUN_DIR="backend/build"
 fi
 
-# Check if build directory exists
-if [ ! -d "build" ]; then
-    echo "❌ Build directory not found. Please run setup script first."
-    exit 1
+if [ -z "$EXECUTABLE" ]; then
+  echo "❌ No backend executable found. Build first:"
+  echo "   cd backend && cmake -B build && cmake --build build"
+  exit 1
 fi
 
-cd build
-
-# Check if executable exists
-if [ ! -f "lala_store" ]; then
-    echo "❌ Backend executable not found. Please build the project first."
-    exit 1
-fi
-
-# Test database connection before starting
-export PGPASSWORD=1234
-if ! psql -U postgres -d "Lala store" -c "SELECT 1;" > /dev/null 2>&1; then
-    echo "❌ Cannot connect to database. Please check PostgreSQL is running."
-    echo "   Database: Lala store"
-    echo "   User: postgres"
-    echo "   Password: 1234"
-    unset PGPASSWORD
-    exit 1
-fi
-unset PGPASSWORD
-
-echo "✅ Database connection verified"
-echo "🚀 Starting backend server on http://localhost:8001"
+echo "✅ Database: database/lala-store.db (SQLite)"
+echo "🚀 Starting backend on http://localhost:8001"
 echo ""
 
-./lala_store
+cd "$ROOT/$RUN_DIR"
+exec ./$(basename "$EXECUTABLE")

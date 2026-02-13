@@ -1,30 +1,26 @@
 #ifndef CONNECTION_H
 #define CONNECTION_H
 
-#include <libpq-fe.h>
+#include <sqlite3.h>
 #include <string>
-#include <memory>
 
 class DatabaseConnection {
 public:
     static DatabaseConnection& getInstance();
-    PGconn* getConnection();
+    sqlite3* getConnection();
     void closeConnection();
     bool isConnected();
-    
+    bool ensureSchema();
+
 private:
     DatabaseConnection();
     ~DatabaseConnection();
     DatabaseConnection(const DatabaseConnection&) = delete;
     DatabaseConnection& operator=(const DatabaseConnection&) = delete;
-    
-    PGconn* conn;
-    std::string host;
-    int port;
-    std::string database;
-    std::string user;
-    std::string password;
-    
+
+    sqlite3* conn;
+    std::string databasePath;
+
     void loadConfig();
     bool connect();
 };

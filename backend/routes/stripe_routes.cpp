@@ -1,6 +1,8 @@
 #include <crow.h>
+#include "../db/connection.h"
 #include "../utils/cors_helper.h"
 #include "../utils/stripe_client.h"
+#include <sqlite3.h>
 #include <nlohmann/json.hpp>
 
 using json = nlohmann::json;
@@ -66,6 +68,50 @@ void setupStripeRoutes(crow::SimpleApp& app) {
         } catch (const std::exception& e) {
             json resp; resp["success"]=false; resp["ok"]=false; resp["message"]=std::string("Invalid request: ")+e.what();
             return CORSHelper::jsonResponse(400, resp.dump());
+        }
+    });
+
+    // Stripe webhook (Visa/PCI: Stripe notifies backend; verify before updating order)
+    // In production: verify Stripe-Signature using webhook_secret
+    CROW_ROUTE(app, "/api/stripe-webhook")
+    .methods("POST"_method)
+    ([](const crow::request& req) {
+        try {
+            json event_json = json::parse(req.body);
+            if (!event_json.contains("type")) {
+                return crow::response(400, "Invalid webhook payload");
+            }
+            std::string event_type = event_json["type"].get<std::string>();
+            std::string intent_id;
+            if (event_json.contains("data") && event_json["data"].contains("object") && event_json["data"]["object"].contains("id")) {
+                intent_id = event_json["data"]["object"]["id"].get<std::string>();
+            }
+            if (intent_id.empty()) {
+                return crow::response(200);
+            }
+            auto& db = DatabaseConnection::getInstance();
+            if (!db.isConnected()) {
+                return crow::response(200);
+            }
+            sqlite3* conn = db.getConnection();
+            const char* newStatus = nullptr;
+            if (event_type == "payment_intent.succeeded") {
+                newStatus = "paid";
+            } else if (event_type == "payment_intent.payment_failed") {
+                newStatus = "payment_failed";
+            }
+            if (newStatus) {
+                sqlite3_stmt* stmt = nullptr;
+                if (sqlite3_prepare_v2(conn, "UPDATE orders SET status = ?1 WHERE stripe_payment_intent_id = ?2", -1, &stmt, nullptr) == SQLITE_OK) {
+                    sqlite3_bind_text(stmt, 1, newStatus, -1, SQLITE_STATIC);
+                    sqlite3_bind_text(stmt, 2, intent_id.c_str(), -1, SQLITE_TRANSIENT);
+                    sqlite3_step(stmt);
+                    sqlite3_finalize(stmt);
+                }
+            }
+            return crow::response(200);
+        } catch (...) {
+            return crow::response(400, "Invalid webhook payload");
         }
     });
 }

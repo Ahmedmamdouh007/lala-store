@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { getFeaturedProducts, getCategories, getAllProducts } from '../api/api';
+import { fallbackProducts, fallbackCategories } from '../data/fallbackProducts';
 import ProductCard from '../components/ProductCard';
 import './Home.css';
 
@@ -8,6 +9,7 @@ const Home = () => {
   const [categories, setCategories] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [usingFallback, setUsingFallback] = useState(false);
 
   useEffect(() => {
     loadData();
@@ -17,6 +19,7 @@ const Home = () => {
     try {
       setLoading(true);
       setError(null);
+      setUsingFallback(false);
       setFeaturedProducts([]);
       setCategories([]);
       const [productsRes, categoriesRes] = await Promise.allSettled([
@@ -34,14 +37,25 @@ const Home = () => {
           products = fallbackRes.data.data.slice(0, 8);
         }
       }
+      if (products.length === 0) {
+        products = fallbackProducts;
+        setUsingFallback(true);
+      }
       setFeaturedProducts(products);
 
+      let cats = [];
       if (categoriesRes.status === 'fulfilled' && categoriesRes.value?.data?.success) {
-        setCategories(categoriesRes.value.data.data || []);
+        cats = categoriesRes.value.data.data || [];
       }
-    } catch (error) {
-      console.error('Error loading home data:', error);
-      setError('Could not load products. Check that the backend is running.');
+      if (cats.length === 0 && products.length > 0) {
+        cats = fallbackCategories;
+      }
+      setCategories(cats);
+    } catch (err) {
+      console.error('Error loading home data:', err);
+      setFeaturedProducts(fallbackProducts);
+      setCategories(fallbackCategories);
+      setUsingFallback(true);
     } finally {
       setLoading(false);
     }
@@ -74,16 +88,21 @@ const Home = () => {
 
       <section className="featured-section">
         <h2>Featured Products</h2>
-        {error ? (
+        {error && featuredProducts.length === 0 ? (
           <p className="no-products">{error} <button type="button" className="retry-btn" onClick={loadData}>Retry</button></p>
         ) : featuredProducts.length === 0 ? (
           <p className="no-products">No products available at the moment. <button type="button" className="retry-btn" onClick={loadData}>Retry</button></p>
         ) : (
-          <div className="products-grid">
-            {featuredProducts.map((product) => (
-              <ProductCard key={product.id} product={product} />
-            ))}
-          </div>
+          <>
+            {usingFallback && (
+              <p className="fallback-notice">Showing demo products (backend offline). Start the backend for live data.</p>
+            )}
+            <div className="products-grid">
+              {featuredProducts.map((product) => (
+                <ProductCard key={product.id} product={product} />
+              ))}
+            </div>
+          </>
         )}
       </section>
     </div>

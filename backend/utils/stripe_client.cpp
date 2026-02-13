@@ -10,6 +10,7 @@ using json = nlohmann::json;
 namespace {
     std::string stripeSecretKey;
     std::string stripePublishableKey;
+    std::string stripeWebhookSecret;
 
     size_t writeCallback(void* contents, size_t size, size_t nmemb, std::string* out) {
         size_t total = size * nmemb;
@@ -35,14 +36,20 @@ void init() {
     std::ifstream f1("config/stripe_config.json");
     std::ifstream f2("../config/stripe_config.json");
     if (f1.is_open()) {
-        try { json c; f1 >> c; if (c.contains("secret_key")) stripeSecretKey = c["secret_key"].get<std::string>(); if (c.contains("publishable_key")) stripePublishableKey = c["publishable_key"].get<std::string>(); } catch(...) {}
+        try { json c; f1 >> c; if (c.contains("secret_key")) stripeSecretKey = c["secret_key"].get<std::string>(); if (c.contains("publishable_key")) stripePublishableKey = c["publishable_key"].get<std::string>(); if (c.contains("webhook_secret")) stripeWebhookSecret = c["webhook_secret"].get<std::string>(); } catch(...) {}
     } else if (f2.is_open()) {
-        try { json c; f2 >> c; if (c.contains("secret_key")) stripeSecretKey = c["secret_key"].get<std::string>(); if (c.contains("publishable_key")) stripePublishableKey = c["publishable_key"].get<std::string>(); } catch(...) {}
+        try { json c; f2 >> c; if (c.contains("secret_key")) stripeSecretKey = c["secret_key"].get<std::string>(); if (c.contains("publishable_key")) stripePublishableKey = c["publishable_key"].get<std::string>(); if (c.contains("webhook_secret")) stripeWebhookSecret = c["webhook_secret"].get<std::string>(); } catch(...) {}
     }
     const char* ek = getenv("STRIPE_SECRET_KEY");
     if (ek && strlen(ek) > 0) stripeSecretKey = ek;
     const char* pk = getenv("STRIPE_PUBLISHABLE_KEY");
     if (pk && strlen(pk) > 0) stripePublishableKey = pk;
+    const char* ws = getenv("STRIPE_WEBHOOK_SECRET");
+    if (ws && strlen(ws) > 0) stripeWebhookSecret = ws;
+}
+
+std::string getWebhookSecret() {
+    return stripeWebhookSecret;
 }
 
 std::string getPublishableKey() {
@@ -51,9 +58,9 @@ std::string getPublishableKey() {
 
 json createPaymentIntent(int amount_cents, const std::string& currency) {
     json result;
-    if (stripeSecretKey.empty() || stripeSecretKey.find("YOUR_") != std::string::npos) {
+    if (stripeSecretKey.empty() || stripeSecretKey.find("YOUR_") != std::string::npos || stripeSecretKey.find("placeholder") != std::string::npos) {
         result["error"] = true;
-        result["message"] = "Stripe not configured. Set STRIPE_SECRET_KEY or edit config/stripe_config.json";
+        result["message"] = "Stripe not configured. Get test keys from https://dashboard.stripe.com/test/apikeys and add them to config/stripe_config.json";
         return result;
     }
     CURL* curl = curl_easy_init();
@@ -91,7 +98,7 @@ json createPaymentIntent(int amount_cents, const std::string& currency) {
 
 json verifyPaymentIntent(const std::string& payment_intent_id) {
     json result;
-    if (stripeSecretKey.empty() || stripeSecretKey.find("YOUR_") != std::string::npos) {
+    if (stripeSecretKey.empty() || stripeSecretKey.find("YOUR_") != std::string::npos || stripeSecretKey.find("placeholder") != std::string::npos) {
         result["ok"]=false; result["message"]="Stripe not configured"; return result;
     }
     CURL* curl = curl_easy_init();
@@ -115,6 +122,43 @@ json verifyPaymentIntent(const std::string& payment_intent_id) {
         std::string status = sr["status"].get<std::string>();
         result["status"] = status; result["ok"] = (status == "succeeded");
     } catch (...) { result["ok"]=false; result["status"]="parse_error"; }
+    return result;
+}
+
+json getPaymentIntentDetails(const std::string& payment_intent_id) {
+    json result;
+    if (stripeSecretKey.empty() || stripeSecretKey.find("YOUR_") != std::string::npos || stripeSecretKey.find("placeholder") != std::string::npos) {
+        result["ok"] = false; result["message"] = "Stripe not configured"; return result;
+    }
+    CURL* curl = curl_easy_init();
+    if (!curl) { result["ok"] = false; result["message"] = "HTTP init failed"; return result; }
+    std::string url = "https://api.stripe.com/v1/payment_intents/" + payment_intent_id + "?expand[]=payment_method";
+    std::string responseBody;
+    struct curl_slist* headers = curl_slist_append(nullptr, ("Authorization: Bearer " + stripeSecretKey).c_str());
+    curl_easy_setopt(curl, CURLOPT_URL, url.c_str());
+    curl_easy_setopt(curl, CURLOPT_HTTPGET, 1L);
+    curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers);
+    curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, writeCallback);
+    curl_easy_setopt(curl, CURLOPT_WRITEDATA, &responseBody);
+    curl_easy_setopt(curl, CURLOPT_TIMEOUT, 15L);
+    CURLcode res = curl_easy_perform(curl);
+    curl_slist_free_all(headers);
+    curl_easy_cleanup(curl);
+    if (res != CURLE_OK) { result["ok"] = false; result["message"] = curl_easy_strerror(res); return result; }
+    try {
+        json sr = json::parse(responseBody);
+        if (sr.contains("error")) { result["ok"] = false; return result; }
+        std::string status = sr.value("status", "");
+        result["ok"] = true;
+        result["status"] = status;
+        if (sr.contains("payment_method") && sr["payment_method"].is_object()) {
+            json pm = sr["payment_method"];
+            if (pm.contains("card")) {
+                result["card_brand"] = pm["card"].value("brand", std::string(""));
+                result["card_last4"] = pm["card"].value("last4", std::string(""));
+            }
+        }
+    } catch (...) { result["ok"] = false; result["message"] = "Parse error"; }
     return result;
 }
 
