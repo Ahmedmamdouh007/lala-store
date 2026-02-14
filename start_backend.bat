@@ -10,8 +10,12 @@ cd /d "%~dp0"
 
 REM 1) Prefer MinGW build (no Visual Studio required)
 if exist "backend\build_mingw\lala_store.exe" (
+    REM Add MSYS2 MinGW bin to PATH so DLLs (e.g. libgcc, libstdc++, libsqlite3) are found
+    if defined MSYS2_MINGW64 set "MINGW_BIN=%MSYS2_MINGW64%\bin"
+    if not defined MINGW_BIN set "MINGW_BIN=C:\msys64\mingw64\bin"
+    if exist "%MINGW_BIN%\libgcc_s_seh-1.dll" set "PATH=%MINGW_BIN%;%PATH%"
     echo [INFO] Using MinGW build. Database: database\lala-store.db
-    echo [INFO] Starting backend on http://localhost:8001
+    echo [INFO] Starting backend on http://localhost:8005
     echo.
     backend\build_mingw\lala_store.exe
     pause
@@ -39,7 +43,7 @@ if exist "Release\lala_store.exe" (
 )
 
 echo [INFO] Database: ..\..\database\lala-store.db
-echo [INFO] Starting backend on http://localhost:8001
+echo [INFO] Starting backend on http://localhost:8005
 echo.
 
 %EXECUTABLE%

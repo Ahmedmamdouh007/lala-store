@@ -20,7 +20,8 @@
    start_backend.bat
    ```
    Or: `start_backend_mingw.bat` (MinGW only).  
-   `start_backend.bat` tries MinGW build first, then Visual Studio build.
+   `start_backend.bat` tries MinGW build first, then Visual Studio build.  
+   Both scripts add `C:\msys64\mingw64\bin` to PATH before starting the MinGW build so required DLLs are found. If MSYS2 is installed elsewhere, set `MSYS2_MINGW64` (e.g. `C:\msys64\mingw64`) so the scripts use that path.
 
 4. Verify: `npm run test:integration`
 

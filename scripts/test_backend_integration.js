@@ -14,7 +14,7 @@ const fs = require('fs');
 const path = require('path');
 const http = require('http');
 
-const BACKEND_URL = 'http://127.0.0.1:8001';
+const BACKEND_URL = 'http://127.0.0.1:8005';
 const API_BASE = `${BACKEND_URL}/api`;
 
 const colors = {
@@ -235,9 +235,9 @@ function testFrontendConfig() {
   
   const viteConfig = fs.readFileSync(viteConfigPath, 'utf8');
   
-  if (viteConfig.includes('127.0.0.1:8001') || viteConfig.includes('localhost:8001')) {
+  if (viteConfig.includes('127.0.0.1:8005') || viteConfig.includes('localhost:8005') || viteConfig.includes('8005')) {
     logSuccess('Frontend proxy configured correctly');
-    logInfo('Proxy target: http://127.0.0.1:8001');
+    logInfo('Proxy target: http://127.0.0.1:8005');
     return true;
   } else {
     logWarning('Frontend proxy configuration may be incorrect');

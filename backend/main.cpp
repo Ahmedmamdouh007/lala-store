@@ -254,9 +254,9 @@ int main() {
         db.ensureSchema();
     }
     
-    std::cout << "Starting LALA STORE server on http://localhost:8001" << std::endl;
-    std::cout << "API endpoints available at http://localhost:8001/api/" << std::endl;
-    app.port(8001).multithreaded().run();
+    std::cout << "Starting LALA STORE server on http://localhost:8005" << std::endl;
+    std::cout << "API endpoints available at http://localhost:8005/api/" << std::endl;
+    app.port(8005).multithreaded().run();
     
     return 0;
 }

@@ -10,7 +10,12 @@ if not exist "backend\build_mingw\lala_store.exe" (
     exit /b 1
 )
 
-echo [INFO] Starting backend (MinGW) on http://localhost:8001
+REM Add MSYS2 MinGW bin to PATH so DLLs (libgcc, libstdc++, libsqlite3, etc.) are found
+if defined MSYS2_MINGW64 set "MINGW_BIN=%MSYS2_MINGW64%\bin"
+if not defined MINGW_BIN set "MINGW_BIN=C:\msys64\mingw64\bin"
+if exist "%MINGW_BIN%\libgcc_s_seh-1.dll" set "PATH=%MINGW_BIN%;%PATH%"
+
+echo [INFO] Starting backend (MinGW) on http://localhost:8005
 echo [INFO] Database: database\lala-store.db
 echo.
 
